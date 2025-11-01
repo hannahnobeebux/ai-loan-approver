@@ -48,24 +48,8 @@ class Model:
         # Before Cleaning
         self.logger.info(f"Before Cleaning (null count):\n{self.data.isnull().sum()}")
 
-        # Convert strings into date formats
-        date_format = "%b-%y"
-        self.convert_date_col("issue_d", date_format)
-        self.convert_date_col("last_pymnt_d", date_format)
-
-        # Calculate payment length in months
-        self.data["payment_length_months"] = ((self.data["last_pymnt_d"].dt.year - self.data["issue_d"].dt.year) * 12 + 
-                                                    (self.data["last_pymnt_d"].dt.month - self.data["issue_d"].dt.month))
-        
-        self.data = self.data.drop(columns=["last_pymnt_d", "issue_d"])
-        self.categorical_cols.remove("issue_d")
-        self.categorical_cols.remove("last_pymnt_d")
-        self.numeric_cols.append("payment_length_months")
-        self.numeric_cols.append("term")
-        self.categorical_cols.remove("term")
-
         # Drop rows where data values aren't mapped correctly eg: NaN
-        arr = ["term", "loan_amnt", "issue_d", "last_pymnt_d", "payment_length_months"]
+        arr = ["term", "loan_amnt"]
         for col in arr:
             if col in self.data.columns:
                 self.data = self.data.dropna(subset=[col])
@@ -76,16 +60,13 @@ class Model:
 
         # Simplifying the emp_length column and converting column to integers
         if "emp_length" in self.data.columns:
-            self.data["emp_length"] = (
-                self.data["emp_length"]
-                .str.replace("< 1 year", "1", regex=False)
-                .str.replace("10+ years", "10", regex=False)
-                .str.replace(" years", "", regex=False)
-                .str.replace(" year", "", regex=False)
-                .replace(float("NaN"), "0")
-                .astype(int)
-            )
-            self.data["emp_length"] = self.data["emp_length"].astype(float).fillna(0).astype(int)
+            emp = self.data["emp_length"].astype(str)
+            emp = emp.str.replace("< 1 year", "0", regex=False)
+            emp = emp.str.replace("10+ years", "10", regex=False)
+            emp = emp.str.replace(" years", "", regex=False)
+            emp = emp.str.replace(" year", "", regex=False)
+            emp = pd.to_numeric(emp, errors="coerce").fillna(0).astype(int)
+            self.data["emp_length"] = emp
 
         # If interest rate is null, replace with mean interest rate
         # if "int_rate" in self.data.columns:
@@ -100,16 +81,25 @@ class Model:
             if col in self.data.columns:
                 upper = self.data[col].quantile(0.99)
                 self.data[col] = np.clip(self.data[col], 0, upper)
-                # or log transform if positively skewed:
-                self.data[col] = np.log1p(self.data[col])
+        
+        if all(c in self.data.columns for c in ["loan_amnt", "annual_inc"]):
+            self.data["loan_to_income"] = self.data["loan_amnt"] / (self.data["annual_inc"] + 1)
+
+        if all(c in self.data.columns for c in ["revol_bal", "annual_inc"]):
+            self.data["revol_to_income"] = self.data["revol_bal"] / (self.data["annual_inc"] + 1)
+
+        if all(c in self.data.columns for c in ["open_acc", "revol_bal"]):
+            self.data["revol_per_acc"] = self.data["revol_bal"] / (self.data["open_acc"] + 1)
+
+        self.numeric_cols.append("loan_to_income")
+        self.numeric_cols.append("revol_to_income")
+        self.numeric_cols.append("revol_per_acc")
         
         # After Cleaning
         self.logger.info(f"After Cleaning (null count):\n{self.data.isnull().sum()}")
         self.logger.info(f"Successfully Cleaned Data:\n(first 5 rows)\n{self.data.head(5)}")
+        self.logger.info(f"Feature summary:\n{self.data.describe(include='all')}")
         # self.logger.info(f"Number of rows after cleaning: {len(self.data)}")
-
-    def convert_date_col(self, col_name, date_format):
-        self.data[col_name] = pd.to_datetime(self.data[col_name], format=date_format)
 
     def process_data(self):
         self.logger.info("Processing Data...")
@@ -124,7 +114,7 @@ class Model:
             ('num', StandardScaler(), self.numeric_cols),
             ('cat', OneHotEncoder(handle_unknown='ignore'), self.categorical_cols),
         ])
-        lr = LogisticRegression(max_iter=1000)
+        lr = LogisticRegression(max_iter=1000, C=5.0, solver="lbfgs", class_weight="balanced")
         self.pipeline = Pipeline([("prep", preprocessor), ("model", lr)])
         data = preprocessor.fit_transform(self.X_train, self.y_train)
         self.logger.info(f"First 5 Rows of pre-processed data:\n{data[0:5]}")
@@ -135,8 +125,8 @@ class Model:
         self.process_data()
         self.pipeline.fit(self.X_train, self.y_train)
         self.model = CalibratedClassifierCV(
-            base_estimator=self.pipeline,
-            cv="prefit",
+            estimator=self.pipeline,
+            cv=5,
             method="isotonic"
         )
         self.model.fit(self.X_cal, self.y_cal)
@@ -144,18 +134,58 @@ class Model:
 
     def test_model(self):
         self.logger.info("Testing Model...")
-        y_proba = self.model.predict_proba(self.Xt)[:,1]
-        self.logger.info(f"ROC-AUC:\n{roc_auc_score(self.yt, y_proba)}")
-        self.logger.info(f"PR_AUC:\n{average_precision_score(self.yt, y_proba)}")
+        y_proba = self.model.predict_proba(self.X_test)[:,1]
+        self.logger.info(f"ROC-AUC:\n{roc_auc_score(self.y_test, y_proba)}")
+        self.logger.info(f"PR_AUC:\n{average_precision_score(self.y_test, y_proba)}")
 
-        cutoffs = [0.05, 0.08, 0.12, 0.16]
+        cutoffs = [0.05, 0.08, 0.12, 0.16, 0.20, 0.25]
         for cutoff in cutoffs:
             y_pred_policy = (y_proba >= cutoff).astype(int)  # 1 = predict default (reject)
-            self.logger.info(f"Confusion Matrix (reject=1 at cutoff {cutoff}):\n{confusion_matrix(self.yt, y_pred_policy)}")
-            self.logger.info(classification_report(self.yt, y_pred_policy, digits=3))
+            self.logger.info(f"Confusion Matrix (reject=1 at cutoff {cutoff}):\n"
+                             f"{confusion_matrix(self.y_test, y_pred_policy)}")
+            self.logger.info(f"Classification Report\n{classification_report(self.y_test, y_pred_policy, digits=3)}")
         self.logger.info("Model Tested Successfully!")
 
     def process_application(self, X):
-        probability = self.model.predict_proba(X)
+        if all(c in X.columns for c in ["loan_amnt", "annual_inc"]):
+            X["loan_to_income"] = X["loan_amnt"] / (X["annual_inc"] + 1)
+
+        if all(c in X.columns for c in ["revol_bal", "annual_inc"]):
+            X["revol_to_income"] = X["revol_bal"] / (X["annual_inc"] + 1)
+
+        if all(c in X.columns for c in ["open_acc", "revol_bal"]):
+            X["revol_per_acc"] = X["revol_bal"] / (X["open_acc"] + 1)
+        probability = self.model.predict_proba(X)[:,1][0]
         risk_score = 1000 - (probability * 1000)
         return risk_score
+
+if __name__ == '__main__':
+    model = Model()
+    numeric = [
+        "loan_amnt", "int_rate",
+        "annual_inc", "delinq_2yrs", "open_acc", "pub_rec",
+        "revol_bal", "repay_fail", "term"
+    ]
+    categorical = ["emp_length", "home_ownership", "purpose"]
+
+    model.load_data("loan_data.csv", numeric, categorical, 10000)
+    model.train_model()
+    model.test_model()
+
+    sample_applicant = pd.DataFrame([{
+        'loan_amnt': 6000.0,                # requested loan amount
+        'term': 36,                         # loan term in months
+        'int_rate': 12.5,                   # offered APR %
+        'emp_length': 6,                    # years employed (or bucketed int if that's how you encoded)
+        'home_ownership': 'RENT',           # home ownership category
+        'annual_inc': 55000.0,              # yearly income
+        'purpose': 'debt_consolidation',    # loan purpose category
+        'delinq_2yrs': 0.0,                 # past 2y delinquencies
+        'open_acc': 6.0,                    # number of open credit lines
+        'pub_rec': 0.0,                     # public derogatories
+        'revol_bal': 3200.0,                # revolving balance
+
+    }])
+
+    score = model.process_application(sample_applicant)
+    model.logger.info(f"Predicted Application Score = {score}")
