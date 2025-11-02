@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from model import Model
 import numpy as np
-import List from typing import List
+from typing import List
 
 
 class Decision:
@@ -115,6 +115,7 @@ class RuleScorer:
 
     
     def decide(self, p_default: float, extra: Dict[str, Any]) -> Decision:
+        # take the value from the model component
         score_ml = proba_default_to_score(p_default)
         acc_score = 0; 
         pos_reasons = []
@@ -258,5 +259,3 @@ if __name__ == '__main__':
         "assets": 25000.0,
         "dti": 18.0
     }
-
-    decision = logic.rules.decide(
