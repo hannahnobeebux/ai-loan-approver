@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox
 
+from gui_tests import Tests
+
 class Gui:
 
     def __init__(self):
@@ -21,6 +23,7 @@ class Gui:
             "assets": None,
             "dti": None
         }
+        self.tests = Tests()
         self.window = tk.Tk()
         self.create_window()
 
@@ -66,7 +69,7 @@ class Gui:
 
     def submit_application(self):
         application_values = {}
-        string_vals = ["home_ownership", "employment_type"]
+        string_vals = ["home_ownership", "purpose", "employment_type"]
         for key, value in self.components.items():
             component_val = value.get()
             if not component_val:
@@ -75,13 +78,40 @@ class Gui:
             if key in string_vals:
                 application_values[key] = component_val
             else:
-                if not component_val.isnumeric():
-                    messagebox.showerror("Validation Error", f"Value '{key}' must be supplied.")
+                try:
+                    application_values[key] = float(component_val)
+                except ValueError:
+                    print(component_val)
+                    messagebox.showerror("Validation Error", f"Value '{key}' must be numeric.")
                     return 0
-                else:
-                    application_values[key] = component_val
         print(application_values)
+
+    def handle_tests(self):
+        tests = [
+            self.tests.test_case_1,
+            self.tests.test_case_2,
+            self.tests.test_case_3,
+            self.tests.test_case_4,
+            self.tests.test_case_5,
+            self.tests.test_case_6
+        ]
+        frame = tk.Frame(master=self.window)
+        columns = 8
+        for i, test in enumerate(tests):
+            button = tk.Button(
+                master=frame, 
+                text=f"Load test {i + 1}", 
+                command=lambda test=test: self.load_test_data(test)
+            )
+            button.grid(row=i//columns, column=i%columns)
+        frame.pack()
+
+    def load_test_data(self, test):
+        for key, value in self.components.items():
+            value.delete(0, tk.END)
+            value.insert(0, test[key])
 
 if __name__ == '__main__':
     frontend = Gui()
+    frontend.handle_tests()
     frontend.window.mainloop()
