@@ -1,14 +1,33 @@
 import tkinter as tk
+from tkinter import messagebox
 
 class Gui:
 
     def __init__(self):
+        self.components = {
+            "loan_amnt": None,
+            "term": None,
+            "int_rate": None,
+            "emp_length": None,
+            "home_ownership": None,
+            "annual_inc": None,
+            "purpose": None,
+            "delinq_2yrs": None,
+            "open_acc": None,
+            "pub_rec": None,
+            "revol_bal": None,
+            "employment_type": None,
+            "num_children_u18": None,
+            "assets": None,
+            "dti": None
+        }
         self.window = tk.Tk()
         self.create_window()
 
     def create_window(self):
         self.window.title("AI Loan Manager - Prototype")
         self.centre_sized_window(800, 500)
+        self.add_widgets()
 
     def centre_sized_window(self, width, height):
         self.window.update_idletasks()
@@ -18,6 +37,50 @@ class Gui:
         y = (screen_height - height) // 2
         self.window.geometry(f"{width}x{height}+{x}+{y}")
 
+    def add_widgets(self):
+        self.add_application_page()
+
+    def add_application_page(self):
+        title = tk.Label(text='Loan Application Page')
+        title.pack()
+
+        frame = tk.Frame(master=self.window,borderwidth=2)
+
+        columns = 4
+        counter = 0
+        for key in self.components:
+            f = tk.Frame(master=frame)
+            row = counter//columns
+            col = counter%columns
+            f.grid(row=row, column=col)
+            label = tk.Label(text=key, master=f)
+            self.components[key] = tk.Entry(master=f)
+            label.pack()
+            self.components[key].pack()
+            counter += 1
+        
+        frame.pack()
+
+        submit = tk.Button(master=self.window, text="Submit Application", command=self.submit_application)
+        submit.pack()
+
+    def submit_application(self):
+        application_values = {}
+        string_vals = ["home_ownership", "employment_type"]
+        for key, value in self.components.items():
+            component_val = value.get()
+            if not component_val:
+                messagebox.showerror("Validation Error", f"Value '{key}' must be supplied.")
+                return 0
+            if key in string_vals:
+                application_values[key] = component_val
+            else:
+                if not component_val.isnumeric():
+                    messagebox.showerror("Validation Error", f"Value '{key}' must be supplied.")
+                    return 0
+                else:
+                    application_values[key] = component_val
+        print(application_values)
 
 if __name__ == '__main__':
     frontend = Gui()
