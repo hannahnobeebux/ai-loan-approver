@@ -136,7 +136,6 @@ class RuleScorer:
         return 0  # catching edge case for below 21 years old
 
 
-        
 # create new score after decision rules
 # will go through each rule and apply adjustments
 # this is just the symbolic part and runs through all cases regardless of ML score 
@@ -230,15 +229,16 @@ class RuleScorer:
                 outcome="DENY",
                 ml_score=self.score_ml,
                 symbolic_score=acc_score,
-                reasons=", ".join(neg_reasons)
+                reasons=neg_reasons
             )
         else:
             return Decision(
                 outcome="APPROVE",
                 ml_score=self.score_ml,
                 symbolic_score=acc_score,
-                reasons=", ".join(pos_reasons)
+                reasons=pos_reasons
             )
+        
 
 
 class LogicComponent():
@@ -287,7 +287,7 @@ class LogicComponent():
         self.logger.info("-" * 40)
         return score 
 
-    def make_decision(self, sample_applicant: pd.DataFrame, applicant_info: Dict[str, Any]) -> Decision:
+    def make_decision(self, sample_applicant: pd.DataFrame, applicant_info: Dict[str, Any], hardcoded_ml_score = None) -> Decision:
         self.logger.info(f"\nProcessing applicant with info:")
         self.logger.info(f"  Employment: {applicant_info.get('employment_type', 'N/A')}")
         self.logger.info(f"  Children: {applicant_info.get('num_children_u18', 'N/A')}")
@@ -296,7 +296,7 @@ class LogicComponent():
         self.logger.info(f"  Age: {applicant_info.get('age', 'N/A')}")
 
 
-        score = self.use_ml_model(sample_applicant)
+        score = self.use_ml_model(sample_applicant) if hardcoded_ml_score is None else hardcoded_ml_score
         self.rules.set_score_ml(score)
         decision = self.rules.adjust_score_and_decide(applicant_info)
         
@@ -304,11 +304,17 @@ class LogicComponent():
         self.logger.info(f"  Outcome: {decision.outcome}")
         self.logger.info(f"  ML Score: {decision.ml_score:.2f}")
         self.logger.info(f"  Symbolic Score: {decision.symbolic_score:.2f}")
-        self.logger.info(f"  Reasons: {decision.reasons}")        
+        self.logger.info(f"  Reasons: {'\n'.join(decision.reasons)}")        
         
         return decision
 
-    def process_application(self, applicant: Dict[str, Any]) -> Decision:
+    def process_application(self, applicant: Dict[str, Any], hardcode_ml_score = None) -> Decision:
+        if hardcode_ml_score is not None:
+            self.rules.set_score_ml(hardcode_ml_score)
+        else:
+            ml_score = self.use_ml_model(pd.DataFrame([applicant]))
+            self.rules.set_score_ml(ml_score)
+
         symbolic_applicant_info = {
             "employment_type": applicant.get("employment_type", ""),
             "num_children_u18": applicant.get("num_children_u18", 0),
@@ -332,21 +338,21 @@ class LogicComponent():
             "pub_rec": applicant.get("pub_rec", 0),
             "revol_bal": applicant.get("revol_bal", 0.0),
             "repay_fail": applicant.get("repay_fail", 0)
-        }])
+        }]) if hardcode_ml_score is None else None
 
-        return self.make_decision(ml_applicant_info, symbolic_applicant_info)
+        return self.make_decision(ml_applicant_info, symbolic_applicant_info, hardcoded_ml_score=hardcode_ml_score)
 
 
 if __name__ == '__main__':
     import test_applicants as test_apps
     logic = LogicComponent()
 
-    for label, applicant, info in test_apps.test_cases:
+    for label, applicant, info, ml_score in test_apps.test_cases:
         logic.logger.info("\n" + "="*60)
         logic.logger.info(f"STARTING TEST CASE: {label.upper()}")
         logic.logger.info("="*60)
 
-        decision = logic.make_decision(applicant, applicant_info=info)
+        decision = logic.make_decision(applicant, applicant_info=info, hardcoded_ml_score=ml_score)
 
         logic.logger.info(f"\nTest case '{label}' completed successfully")
         logic.logger.info("="*60)  

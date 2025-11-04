@@ -1,5 +1,8 @@
 import pandas as pd
 
+# The below tests are for applicants who will get varying generated risk scores from the ML model
+# GUI acts as E2E tests - uses both ML score and Symbolic reasons
+
 # HIGH RISK APPLICANT
 high_risk_applicant = pd.DataFrame([{
     'loan_amnt': 35000.0,               # large loan amount
@@ -125,12 +128,32 @@ poor_info = {
     "age": 45
 }
 
+# Below test cases will use hardcoded ML scores just to test symbolic layer in isolation
+# Test case: Good ML Score but bad reasons for a symbolic score --> outcome = DENY eg: bankruptcy or age
+# Test case: mix of good and bad reasons but gets denied overall
+# Test case: mix of good and bad reasons but gets approved overall
+
+# Test case: Bad ML Score but good reasons for a symbolic score --> outcome = APPROVE
+bad_ml_good_symbolic_info = {
+    "employment_type": "Full-time",      # +10 bonus
+    "num_children_u18": 0,              # no penalty
+    "assets": 100000.0,                 # +50 bonus (high assets)
+    "dti": 0.10,                        # low DTI, no penalty
+    "cr_line_duration_years": 25,       # +15 bonus (long credit history)
+    "experienced_bankruptcy": False,     # no penalty
+    "age": 35                           # no penalty
+}
+
+# Failing test - incorrect passing of hardcoded ML score 
+
+
 # List of all test cases for easy iteration
 test_cases = [
-    ("High Risk", high_risk_applicant, high_risk_info),
-    ("Medium Risk", medium_risk_applicant, medium_risk_info),
-    ("Low Risk", low_risk_applicant, low_risk_info),
-    ("Excellent", excellent_applicant, excellent_info),
-    ("Poor", poor_applicant, poor_info)
+    ("High Risk", high_risk_applicant, high_risk_info, None),
+    ("Medium Risk", medium_risk_applicant, medium_risk_info, None),
+    ("Low Risk", low_risk_applicant, low_risk_info, None),
+    ("Excellent", excellent_applicant, excellent_info, None),
+    ("Poor", poor_applicant, poor_info, None), 
+    ("Hardcoded ML | Poor Credit Risk + Good factors", {}, bad_ml_good_symbolic_info, 701)
 ]
 
