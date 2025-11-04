@@ -56,7 +56,7 @@ class RuleScorer:
             "dti_penalty_per_point": -5.0,
             "dti_threshold": 10.0,
 
-            "cr_line_duration_considerations": {"20": 40, "10": 20, "5": 15, "2": 10},
+            "cr_line_duration_considerations": {20: 40, 10: 20, 5: 15, 2: 10},
 
             "bankruptcy_penalty": -50.0,
 
@@ -195,7 +195,7 @@ class RuleScorer:
 
         if (self.score_ml <= 900):
             temp = acc_score
-            acc_score += self.cr_line_duration_adj(applicant_info.get("cr_line_duration", 0))
+            acc_score += self.cr_line_duration_adj(applicant_info.get("cr_line_duration_years", 0))
             if acc_score < temp:
                 neg_reasons.append("Credit line duration caused risk score to increase.")
             else:
