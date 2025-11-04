@@ -22,6 +22,7 @@ high_risk_info = {
     "dti": 0.45,                        # high debt-to-income
     "cr_line_duration_years": 1,        # short credit history
     "experienced_bankruptcy": True,      # bankruptcy history
+    "age": 30
 }
 
 # MEDIUM RISK APPLICANT
@@ -46,6 +47,7 @@ medium_risk_info = {
     "dti": 0.25,                        # moderate debt-to-income
     "cr_line_duration_years": 5,        # decent credit history
     "experienced_bankruptcy": False,     # no bankruptcy
+    "age": 45
 }
 
 # LOW RISK APPLICANT
@@ -70,6 +72,7 @@ low_risk_info = {
     "dti": 0.08,                        # low debt-to-income
     "cr_line_duration_years": 15,       # long credit history
     "experienced_bankruptcy": False,     # no bankruptcy
+    "age": 18
 }
 
 # EDGE CASE: VERY HIGH SCORE APPLICANT (should auto-approve)
@@ -94,6 +97,7 @@ excellent_info = {
     "dti": 0.05,
     "cr_line_duration_years": 20,
     "experienced_bankruptcy": False,
+    "age": 23
 }
 
 # EDGE CASE: VERY LOW SCORE APPLICANT (should auto-deny)
@@ -118,6 +122,7 @@ poor_info = {
     "dti": 0.8,
     "cr_line_duration_years": 0.5,
     "experienced_bankruptcy": True,
+    "age": 45
 }
 
 # List of all test cases for easy iteration

@@ -60,6 +60,8 @@ class RuleScorer:
 
             "bankruptcy_penalty": -50.0,
 
+            "age_considerations": {21: -5}
+
         }
         self.cfg = {**defaults, **(config or {})}
 
@@ -123,6 +125,15 @@ class RuleScorer:
         if experienced_bankruptcy:
             return self.cfg["bankruptcy_penalty"]
         return 0.0
+    
+    def age_penalty(self, age: int) -> float:
+        if age is None or np.isnan(age):
+            return 0.0
+        for (key, val) in self.cfg["age_considerations"].items():
+            if age <= int(key):
+                return float(val)
+        return 0  # catching edge case for below 21 years old
+
 
         
 # amend credit risk after decision rules
@@ -151,7 +162,7 @@ class RuleScorer:
             return Decision(
                 outcome="APPROVE",
                 ml_score=self.score_ml,
-                symbolic_score=self.score_ml,
+                symbolic_score=0,
                 reasons=[f"ML score {self.score_ml}. Approved without adjustments."]
             )
         
@@ -163,7 +174,7 @@ class RuleScorer:
             return Decision(
                 outcome="DENY",
                 ml_score=self.score_ml,
-                symbolic_score=self.score_ml,
+                symbolic_score=0,
                 reasons=[f"ML score {self.score_ml}. Denied without adjustments."]
             )
         
@@ -206,6 +217,12 @@ class RuleScorer:
             acc_score += self.bankruptcy_penalty(applicant_info.get("experienced_bankruptcy", False))
             if acc_score < temp:
                 neg_reasons.append("Bankruptcy history caused risk score to increase.")
+            temp2 = acc_score
+            acc_score += self.age_penalty(applicant_info.get("age", 0))
+            if acc_score < temp2:
+                neg_reasons.append("Age caused risk score to increase.")
+            else:
+                pos_reasons.append("Age caused risk score to decrease.")
 
 
     #    using new score     
@@ -277,6 +294,7 @@ class LogicComponent():
         self.logger.info(f"  Children: {applicant_info.get('num_children_u18', 'N/A')}")
         self.logger.info(f"  Assets: ${applicant_info.get('assets', 'N/A'):,.2f}")
         self.logger.info(f"  DTI: {applicant_info.get('dti', 'N/A')}")
+        self.logger.info(f"  Age: {applicant_info.get('age', 'N/A')}")
 
 
         score = self.use_ml_model(sample_applicant)
