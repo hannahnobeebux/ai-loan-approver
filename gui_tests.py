@@ -14,7 +14,8 @@ class Tests:
         "employment_type": "self-employment",
         "num_children_u18": 2,
         "assets": 2000,
-        "dti": 0.05
+        "dti": 0.05,
+        "age": 22
     }
     
     test_case_2 = {

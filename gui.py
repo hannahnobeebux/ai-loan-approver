@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 from gui_tests import Tests
+from logic import LogicComponent
 
 class Gui:
 
@@ -21,10 +22,12 @@ class Gui:
             "employment_type": None,
             "num_children_u18": None,
             "assets": None,
-            "dti": None
+            "dti": None,
+            "age": None
         }
         self.tests = Tests()
         self.window = tk.Tk()
+        self.logic = LogicComponent()
         self.create_window()
 
     def create_window(self):
@@ -85,9 +88,11 @@ class Gui:
                     messagebox.showerror("Validation Error", f"Value '{key}' must be numeric.")
                     return 0
         print(application_values)
-        response = "approve"
-        output = "Approved" if response == "approve" else "Denied"
-        messagebox.showinfo("Loan App Outcome", f"Loan {output}!")
+        decision = self.logic.process_application(application_values)
+        response = decision.outcome
+        ml_score = decision.ml_score
+        output = "Approved" if response == "APPROVE" else "Denied"
+        messagebox.showinfo("Loan App Outcome", f"Loan {output}! (ML Score: {ml_score})")
 
     def handle_tests(self):
         tests = [

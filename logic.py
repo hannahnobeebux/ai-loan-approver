@@ -307,6 +307,32 @@ class LogicComponent():
         
         return decision
 
+    def process_application(self, applicant: Dict[str, Any]) -> Decision:
+        symbolic_applicant_info = {
+            "employment_type": applicant.get("employment_type", ""),
+            "num_children_u18": applicant.get("num_children_u18", 0),
+            "assets": applicant.get("assets", 0.0),
+            "dti": applicant.get("dti", 0.0),
+            "age": applicant.get("age", 0)
+        }
+
+        ml_applicant_info = pd.DataFrame([{
+            "loan_amnt": applicant.get("loan_amnt", 0.0),
+            "term": applicant.get("term", ""),
+            "int_rate": applicant.get("int_rate", 0.0),
+            "emp_length": applicant.get("emp_length", ""),
+            "home_ownership": applicant.get("home_ownership", ""),
+            "annual_inc": applicant.get("annual_inc", 0.0),
+            "purpose": applicant.get("purpose", ""),
+            "delinq_2yrs": applicant.get("delinq_2yrs", 0),
+            "open_acc": applicant.get("open_acc", 0),
+            "pub_rec": applicant.get("pub_rec", 0),
+            "revol_bal": applicant.get("revol_bal", 0.0),
+            "repay_fail": applicant.get("repay_fail", 0)
+        }])
+
+        return self.make_decision(ml_applicant_info, symbolic_applicant_info)
+
 
 if __name__ == '__main__':
     import test_applicants as test_apps
