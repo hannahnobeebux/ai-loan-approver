@@ -16,7 +16,7 @@ class Tests:
         "assets": 2000,
         "dti": 0.05,
         "age": 22,
-        "experienced_bankruptcy": True,
+        "experienced_bankruptcy": False,
         "cr_line_duration_years": 3
     }
     

@@ -114,6 +114,7 @@ class RuleScorer:
         return 0.0
     
     def cr_line_duration_adj(self, years: float) -> float:
+        print(f"years = {years}")
         # enumerate through entire dictionary to find a satisfactory value for the score adjustment
         for (key, val) in self.cfg["cr_line_duration_considerations"].items():
             if years >= int(key):
@@ -313,7 +314,9 @@ class LogicComponent():
             "num_children_u18": applicant.get("num_children_u18", 0),
             "assets": applicant.get("assets", 0.0),
             "dti": applicant.get("dti", 0.0),
-            "age": applicant.get("age", 0)
+            "age": applicant.get("age", 0),
+            "experienced_bankruptcy": applicant.get("experienced_bankruptcy", False),
+            "cr_line_duration_years": applicant.get("cr_line_duration_years", 0),
         }
 
         ml_applicant_info = pd.DataFrame([{
