@@ -85,6 +85,9 @@ class Gui:
                     messagebox.showerror("Validation Error", f"Value '{key}' must be numeric.")
                     return 0
         print(application_values)
+        response = "approve"
+        output = "Approved" if response == "approve" else "Denied"
+        messagebox.showinfo("Loan App Outcome", f"Loan {output}!")
 
     def handle_tests(self):
         tests = [
