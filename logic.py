@@ -1,66 +1,80 @@
 from typing import Any, Dict, Optional
 from model import Model
 import numpy as np
-import List from typing import List
-
+from typing import List
+import logging
+import pandas as pd
 
 class Decision:
-    outcome: str   #approve or deny
-    ml_score: int     #credit risk score from the model
-    symbolic_score: int
-    reasons: List[str]  #credit risk score after applying rules
-
-# baseline credit score: 900
-# each penalty point reduces score by 10 points
-# each child beyond 3 reduces score by configured penalty
+    def __init__(self, outcome: str, ml_score: int, symbolic_score: int, reasons: List[str]) -> None:
+        self.outcome = outcome
+        self.ml_score = ml_score
+        self.symbolic_score = symbolic_score
+        self.reasons = reasons  
 
 # SYMBOLIC LAYER
 class RuleScorer:
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        
+
+        self.score_ml = 0
+
+        self.logger = logging.getLogger(__name__)
+        logging.basicConfig(
+            filename="logs/model.log",
+            encoding="utf-8",
+            format="{asctime} - {levelname} - {message}\n",
+            filemode="w",
+            style="{",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            level=logging.DEBUG
+        )
+        self.logger.info("INITIALISING RULE SCORER CLASS")
+
         defaults = {
-            # Decision thresholds on final score
-            # in between deny_threshold and approve_threshold is "manual review"
+            # in between deny_threshold and approve_threshold will trigger additional info to be checked
             # eg: 900 is 10% default risk
             "deny_threshold": 700,
             "approve_threshold": 900,
 
-            # salary (avg annual income over 5 years)
-            # increase points when there's a bonus
-            # 6pts for each 10k but cap at 60pts
-            "salary_bonus_per_10k": 6.0,     
-            "salary_bonus_cap": 60.0,       
-
             # employment - penalty if self employed, bonus if full-time employed
-            "employment_penalty_self_employed": -40.0,
-            "employment_bonus_fte": +10.0,            
+            "employment_penalty_self_employed": -20.0,
+            "employment_bonus_fte": 10.0,            
 
-            # ask for number of children under 18
-            # Children penalties - the higher the number of children, the higher the penalty
+            # ask applicant for number of children under 18
             # _ge4 means "greater than or equal to 4"
             # having dependents affecting likelihood of repayment
-            "children_penalties_u18": {0: 0, 1: -20, 2: -50, 3: -100},
-            "children_penalty_u18_ge4": -150.0,
+            "children_penalties_u18": {0: 20, 1: 5, 2: -5, 3: -10},
+            "children_penalty_u18_ge4": -15.0,
 
             # assets bonus points
             # 5pts for each 10k but cap at 80pts
             "assets_bonus_per_10k": 5.0,
-            "assets_bonus_cap": 80.0,
+            "assets_bonus_cap": 40.0,
 
             # debt-to-income ratio (DTI) penalty
             # the lower the DTI, the better the chance of repayment
             "dti_penalty_per_point": -5.0,
-            "dti_threshold": 20.0,
+            "dti_threshold": 10.0,
+
+            "cr_line_duration_considerations": {20: 40, 10: 20, 5: 15, 2: 10},
+
+            "bankruptcy_penalty": -50.0,
+
+            "age_considerations": {21: -5}
+
         }
         self.cfg = {**defaults, **(config or {})}
 
+    def set_score_ml(self, score: float) -> None:
+        self.score_ml = score
+
     def penalise_children_u18(self, num_children: int) -> int:
-        # Penalise applicants with more than 3 children by reducing their credit score.
-        # consider ages of children
         if num_children is None or np.isnan(num_children):
             return 0.0
         n = int(num_children)
-        if n >= 4:
+        if (n == 1):
+            return self.cfg["children_penalties_u18"][1]
+        if (n >= 4):
             return self.cfg["children_penalties_u18_ge4"]
         return float(self.cfg["children_penalties_u18"].get(n, 0.0))
 
@@ -74,7 +88,7 @@ class RuleScorer:
     def assets_adj(self, assets: float) -> float:
         if assets is None or np.isnan(assets):
             return 0.0
-        # Calculate bonus points for assets
+        # calculate bonus points for assets
         bonus = min(assets // 10000 * self.cfg["assets_bonus_per_10k"], self.cfg["assets_bonus_cap"])
         return float(bonus)
 
@@ -85,12 +99,12 @@ class RuleScorer:
             return float(dti - self.cfg["dti_threshold"]) * self.cfg["dti_penalty_per_point"]
         return 0.0
 
-    def salary_and_assets() :
-        pass
-        # call salary_points and assets_points
-        # no need to call reduce credit risk with outcome of salary and assets individual scores
+    def salary_and_assets_adj(self, salary: float, assets: float) -> float:
+        salary_points = self.salary_adj(salary)
+        assets_points = self.assets_adj(assets)
+        return salary_points + assets_points
 
-    def _employment_adj(self, employment_type: Optional[str]) -> float:
+    def employment_adj(self, employment_type: Optional[str]) -> float:
         if not employment_type: return 0.0
         et = str(employment_type).strip().lower()
         if "self" in et or "contract" in et:   # self-employed / contractor
@@ -98,165 +112,218 @@ class RuleScorer:
         if "full" in et or "fte" in et:
             return self.cfg["employment_bonus_fte"]
         return 0.0
-        
-# amend credit risk after decision rules
-# will go through each rule and apply adjustments
-# may not need this method entirely
-    def score_adjustments(self, extra: Dict[str, Any]) -> (float, Dict[str, float], List[str]):
-
-        comps: Dict[str, float] = {}
-        reasons: List[str] = []
-
-        a = self._employment_adj(extra.get("employment_type"))
-        if a: comps["employment"] = a; reasons.append(f"Employment type: {a:+.0f} ({extra.get('employment_type')}).")
-
-        total_adj = float(sum(comps.values()))
-        return total_adj, comps, reasons
-
     
-    def decide(self, p_default: float, extra: Dict[str, Any]) -> Decision:
-        score_ml = proba_default_to_score(p_default)
+    def cr_line_duration_adj(self, years: float) -> float:
+        # enumerate through entire dictionary to find a satisfactory value for the score adjustment
+        for (key, val) in self.cfg["cr_line_duration_considerations"].items():
+            if years >= int(key):
+                return int(val)
+        # if below the lowest value, return the lowest adjustment (most negative)
+        return -15.0
+    
+    def bankruptcy_penalty(self, experienced_bankruptcy: bool) -> float:
+        if experienced_bankruptcy:
+            return self.cfg["bankruptcy_penalty"]
+        return 0.0
+    
+    def age_penalty(self, age: int) -> float:
+        if age is None or np.isnan(age):
+            return 0.0
+        for (key, val) in self.cfg["age_considerations"].items():
+            if age <= int(key):
+                return float(val)
+        return 0  # catching edge case for below 21 years old
+
+
+        
+# create new score after decision rules
+# will go through each rule and apply adjustments
+# this is just the symbolic part and runs through all cases regardless of ML score 
+
+    # testing purpose for all methods
+    def apply_all_rules(self, sample_applicant, applicant_info) -> float:
+        self.logger.info(f"Applying all rules to applicant: {applicant_info.get('id')}")
+        adjustment = 0.0
+        adjustment += self.assets_adj(applicant_info.get("assets", 0.0))
+        adjustment += self.salary_adj(applicant_info.get("annual_income", 0.0))
+        adjustment += self.penalise_children_u18(applicant_info.get("num_children_u18", 0))
+        adjustment += self.employment_adj(applicant_info.get("employment_type", ""))
+        adjustment += self.dti_penalty(applicant_info.get("dti", 0.0))
+        new_score = self.score_ml + adjustment
+        self.logger.info(f"Original ML Score: {self.score_ml}, Adjustment: {adjustment}, New Score: {new_score}")
+
+    def adjust_score_and_decide(self, applicant_info) -> Decision:
         acc_score = 0; 
         pos_reasons = []
         neg_reasons = []
-        if (score_ml >= 950):
+
+        if (self.score_ml >= 950):
             return Decision(
                 outcome="APPROVE",
-                ml_score=score_ml,
-                symbolic_score=score_ml,
-                reasons=[f"ML score {score_ml:.0f} from p_default={p_default:.3f}. Approved without adjustments."]
+                ml_score=self.score_ml,
+                symbolic_score=0,
+                reasons=[f"ML score {self.score_ml}. Approved without adjustments."]
             )
         
-        # checking for score ranges and applying individual rule adjustments which then check on more conditions
-        # actually checking the score_ml against the rules individually 
-        # eg: high score, lets still check employment history
         # start with least riskiest - going from lowest to highest ML score
-        # If you have a 20-25% chance of defaulting - deny right away. the ML model is based off historical data - an accurate representation of risk
-        # Score needs to be above 700 but below 950 to consider adjustments
+        # if you have a 20-25% chance of defaulting - deny right away. the ML model is based off historical data - an accurate representation of risk
+        # score needs to be above 700 but below 950 to consider adjustments
 
-        if (score_ml <= 700):
+        if (self.score_ml <= 700):
             return Decision(
                 outcome="DENY",
-                ml_score=score_ml,
-                symbolic_score=score_ml,
-                reasons=[f"ML score {score_ml:.0f} from p_default={p_default:.3f}. Denied without adjustments."]
+                ml_score=self.score_ml,
+                symbolic_score=0,
+                reasons=[f"ML score {self.score_ml}. Denied without adjustments."]
             )
         
-        if (score_ml <= 750):
+        if (self.score_ml <= 750):
             temp = acc_score
-            acc_score += self.assets_adj(extra.get("assets", 0.0))
+            acc_score += self.assets_adj(applicant_info.get("assets", 0.0))
             if acc_score < temp:
                 neg_reasons.append("Assets caused risk score to increase.")
             else:
                 pos_reasons.append("Assets caused risk score to decrease.")
-        
-        if (score_ml <= 800):
-            acc_score += self.salary_adj(extra.get("annual_income", 0.0))
-            if acc_score < temp:
-                neg_reasons.append("Salary caused risk score to increase.")
-            else:
-                pos_reasons.append("Salary caused risk score to decrease.")
 
-        if (score_ml <= 850):
-            acc_score += self.penalise_children_u18(extra.get("num_children_u18", 0))
-            
-    #    using new score     
+        if (self.score_ml <= 800):
+            temp = acc_score
+            acc_score += self.employment_adj(applicant_info.get("employment_type", ""))
+            if acc_score < temp:
+                neg_reasons.append("Employment type caused risk score to increase.")
+            else:
+                pos_reasons.append("Employment type caused risk score to decrease.")
+
+        if (self.score_ml <= 850):
+            temp = acc_score
+            acc_score += self.penalise_children_u18(applicant_info.get("num_children_u18", 0))
+            acc_score += self.dti_penalty(applicant_info.get("dti", 0.0))
+            if acc_score < temp:
+                neg_reasons.append("Children and debt-to-income ration caused risk score to increase.")
+            else:
+                pos_reasons.append("Children and debt-to-income ratio caused risk score to decrease.")
+
+        if (self.score_ml <= 900):
+            temp = acc_score
+            acc_score += self.cr_line_duration_adj(applicant_info.get("cr_line_duration_years", 0))
+            if acc_score < temp:
+                neg_reasons.append("Credit line duration caused risk score to increase.")
+            else:
+                pos_reasons.append("Credit line duration caused risk score to decrease.")
+
+        if (self.score_ml < 950):
+            temp = acc_score
+            acc_score += self.bankruptcy_penalty(applicant_info.get("experienced_bankruptcy", False))
+            if acc_score < temp:
+                neg_reasons.append("Bankruptcy history caused risk score to increase.")
+            temp2 = acc_score
+            acc_score += self.age_penalty(applicant_info.get("age", 0))
+            if acc_score < temp2:
+                neg_reasons.append("Age caused risk score to increase.")
+            else:
+                pos_reasons.append("Age caused risk score to decrease.")
+
+
+    # using new score
         if (acc_score < 0):
             return Decision(
                 outcome="DENY",
-                ml_score=score_ml,
+                ml_score=self.score_ml,
                 symbolic_score=acc_score,
-                reasons=neg_reasons.join(", ")
+                reasons=", ".join(neg_reasons)
             )
         else:
             return Decision(
                 outcome="APPROVE",
-                ml_score=score_ml,
+                ml_score=self.score_ml,
                 symbolic_score=acc_score,
-                reasons=pos_reasons.join(", ")
+                reasons=", ".join(pos_reasons)
             )
 
 
-        adj, comps, reasons = self.score_adjustments(extra)
-        score_final = clamp(score_ml + adj, 300.0, 850.0)
-
-        if score_final >= self.cfg["approve_threshold"]:
-            outcome = "APPROVE"
-        elif score_final <= self.cfg["deny_threshold"]:
-            outcome = "DENY"
-        else:
-            outcome = "REVIEW"
-
-        reasons.insert(0, f"ML score {score_ml:.0f} from p_default={p_default:.3f}.")
-        reasons.append(
-            f"Final score {score_final:.0f} (deny≤{self.cfg['deny_threshold']:.0f} < review < approve≥{self.cfg['approve_threshold']:.0f})."
-        )
-
-        return Decision(
-            outcome=outcome,
-            ml_score=score_ml,
-            symbolic_score=score_final,
-            reasons=reasons
-        )
-
 class LogicComponent():
     def __init__(self):
+
+        self.logger = logging.getLogger("LogicComponent")
+
+        log_handler = logging.FileHandler("logs/logic.log", mode="w")
+        log_formatter = logging.Formatter(
+            "{asctime} - {levelname} - {message}",
+            style="{",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        log_handler.setFormatter(log_formatter)
+        self.logger.addHandler(log_handler)
+        self.logger.setLevel(logging.DEBUG)
+        
+        self.logger.info("="*60)
+        self.logger.info("INITIALISING LOGIC COMPONENT")
+        self.logger.info("="*60)
         
         self.model = Model()
-        self.rules = RuleScorer()
 
         self.numeric = [
             "loan_amnt", "int_rate",
             "annual_inc", "delinq_2yrs", "open_acc", "pub_rec",
-            "revol_bal", "repay_fail"
+            "revol_bal", "repay_fail", "term"
         ]
         self.categorical = [
-            "term", "emp_length", "home_ownership", "issue_d",
-            "purpose", "last_pymnt_d"
+            "emp_length", "home_ownership",
+            "purpose"
         ]
 
-        # self.model.load_data("loan_data.csv", self.numeric, self.categorical, 2000)
-        # self.model.train_model()
-        # self.model.test_model()
+        self.filename = "loan_data.csv"
+        self.nrows = 10000
+        self.rules = RuleScorer()
+
+    def use_ml_model(self, sample_applicant: pd.DataFrame) -> None:
+        self.logger.info("-" * 40)
+        self.logger.info("Loading and training ML model...")
+        self.model.load_data(self.filename, self.numeric, self.categorical, self.nrows)
+        self.model.train_model()
+        self.model.test_model()  
+        score = self.model.process_application(sample_applicant)
+        self.logger.info(f"ML model returned score: {score}")
+        self.logger.info("-" * 40)
+        return score 
+
+    def make_decision(self, sample_applicant: pd.DataFrame, applicant_info: Dict[str, Any]) -> Decision:
+        self.logger.info(f"\nProcessing applicant with info:")
+        self.logger.info(f"  Employment: {applicant_info.get('employment_type', 'N/A')}")
+        self.logger.info(f"  Children: {applicant_info.get('num_children_u18', 'N/A')}")
+        self.logger.info(f"  Assets: ${applicant_info.get('assets', 'N/A'):,.2f}")
+        self.logger.info(f"  DTI: {applicant_info.get('dti', 'N/A')}")
+        self.logger.info(f"  Age: {applicant_info.get('age', 'N/A')}")
+
+
+        score = self.use_ml_model(sample_applicant)
+        self.rules.set_score_ml(score)
+        decision = self.rules.adjust_score_and_decide(applicant_info)
         
-        def use_ml_model(self, csv_path: str, nrows: Optional[int] = None) -> None:
-            self.model.load_data(csv_path, self.numeric, self.categorical, nrows)
-            self.model.train_model()
-            self.model.test_model()  # logs your metrics    
+        self.logger.info(f"\nDECISION SUMMARY:")
+        self.logger.info(f"  Outcome: {decision.outcome}")
+        self.logger.info(f"  ML Score: {decision.ml_score:.2f}")
+        self.logger.info(f"  Symbolic Score: {decision.symbolic_score:.2f}")
+        self.logger.info(f"  Reasons: {decision.reasons}")        
+        
+        return decision
 
 
 if __name__ == '__main__':
+    import test_applicants as test_apps
     logic = LogicComponent()
 
-    # pass in sample application - coming from GUI in the form of a JSON
-    # pass in extra info such as number of children, assets, employment type, etc.
+    for label, applicant, info in test_apps.test_cases:
+        logic.logger.info("\n" + "="*60)
+        logic.logger.info(f"STARTING TEST CASE: {label.upper()}")
+        logic.logger.info("="*60)
 
-    # using logic.decide() to return approve/deny
-    # if in betweeen threshholds - in review - extra function which checks if salary is high enough etc..
-    # mvp = in between thresholds - deny 
+        decision = logic.make_decision(applicant, applicant_info=info)
 
-    logic = LogicComponent()
-    logic.use_ml_model("loan_data.csv", nrows=2000)
+        logic.logger.info(f"\nTest case '{label}' completed successfully")
+        logic.logger.info("="*60)  
+        
+    logic.logger.info("\n" + "="*60)
+    logic.logger.info("ALL TEST CASES COMPLETED")
+    logic.logger.info("="*60)
 
-    sample_applicant = pd.DataFrame([{
-        'loan_amnt': 6000.0,                # requested loan amount
-        'term': 36,                         # loan term in months
-        'int_rate': 12.5,                   # offered APR %
-        'emp_length': 6,                    # years employed (or bucketed int if that's how you encoded)
-        'home_ownership': 'RENT',           # home ownership category
-        'annual_inc': 55000.0,              # yearly income
-        'purpose': 'debt_consolidation',    # loan purpose category
-        'delinq_2yrs': 0.0,                 # past 2y delinquencies
-        'open_acc': 6.0,                    # number of open credit lines
-        'pub_rec': 0.0,                     # public derogatories
-        'revol_bal': 3200.0                # revolving balance
-    }])
 
-    applicant_info = {
-        "employment_type": "Full-time",
-        "num_children_u18": 2,
-        "assets": 25000.0,
-        "dti": 18.0
-    }
-
-    decision = logic.rules.decide(
