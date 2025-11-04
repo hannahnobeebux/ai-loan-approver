@@ -227,6 +227,22 @@ class RuleScorer:
 
 class LogicComponent():
     def __init__(self):
+
+        self.logger = logging.getLogger("LogicComponent")
+
+        log_handler = logging.FileHandler("logs/logic.log", mode="w")
+        log_formatter = logging.Formatter(
+            "{asctime} - {levelname} - {message}",
+            style="{",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        log_handler.setFormatter(log_formatter)
+        self.logger.addHandler(log_handler)
+        self.logger.setLevel(logging.DEBUG)
+        
+        self.logger.info("="*60)
+        self.logger.info("INITIALISING LOGIC COMPONENT")
+        self.logger.info("="*60)
         
         self.model = Model()
 
@@ -245,18 +261,35 @@ class LogicComponent():
         self.rules = RuleScorer()
 
     def use_ml_model(self, sample_applicant: pd.DataFrame) -> None:
+        self.logger.info("-" * 40)
+        self.logger.info("Loading and training ML model...")
         self.model.load_data(self.filename, self.numeric, self.categorical, self.nrows)
         self.model.train_model()
         self.model.test_model()  # logs your metrics    
         score = self.model.process_application(sample_applicant)
+        self.logger.info(f"ML model returned score: {score}")
+        self.logger.info("-" * 40)
         return score 
 
     def make_decision(self, sample_applicant: pd.DataFrame, applicant_info: Dict[str, Any]) -> Decision:
+        self.logger.info(f"\nProcessing applicant with info:")
+        self.logger.info(f"  Employment: {applicant_info.get('employment_type', 'N/A')}")
+        self.logger.info(f"  Children: {applicant_info.get('num_children_u18', 'N/A')}")
+        self.logger.info(f"  Assets: ${applicant_info.get('assets', 'N/A'):,.2f}")
+        self.logger.info(f"  DTI: {applicant_info.get('dti', 'N/A')}")
+
+
         score = self.use_ml_model(sample_applicant)
         self.rules.set_score_ml(score)
         decision = self.rules.adjust_score_and_decide(applicant_info)
+        
+        self.logger.info(f"\nDECISION SUMMARY:")
+        self.logger.info(f"  Outcome: {decision.outcome}")
+        self.logger.info(f"  ML Score: {decision.ml_score:.2f}")
+        self.logger.info(f"  Symbolic Score: {decision.symbolic_score:.2f}")
+        self.logger.info(f"  Reasons: {decision.reasons}")        
+        
         return decision
-
 
 
 if __name__ == '__main__':
@@ -268,39 +301,23 @@ if __name__ == '__main__':
     # if in betweeen threshholds - in review - extra function which checks if salary is high enough etc..
     # mvp = in between thresholds - deny 
 
-    sample_applicant = pd.DataFrame([{
-        'loan_amnt': 6000.0,                # requested loan amount
-        'term': 36,                         # loan term in months
-        'int_rate': 12.5,                   # offered APR %
-        'emp_length': 6,                    # years employed (or bucketed int if that's how you encoded)
-        'home_ownership': 'RENT',           # home ownership category
-        'annual_inc': 55000.0,              # yearly income
-        'purpose': 'debt_consolidation',    # loan purpose category
-        'delinq_2yrs': 0.0,                 # past 2y delinquencies
-        'open_acc': 6.0,                    # number of open credit lines
-        'pub_rec': 0.0,                     # public derogatories
-        'revol_bal': 3200.0                # revolving balance
-    }])
-
-# make a file to hold sample applicants - as a .py file and export them as pandas dataframes 
-    # HIGH RISK 
-
-    # MEDIUM RISK 
-
-    # LOW RISK 
-
-    applicant_info = {
-        "employment_type": "Full-time",
-        "num_children_u18": 0,
-        "assets": 25000.0,
-        "dti": 0.1,
-        "cr_line_duration_years": 5,  # years with credit line
-        "experienced_bankruptcy": False,
-    }
-
+    import test_applicants as test_apps
     logic = LogicComponent()
 
-    decision = logic.make_decision(sample_applicant, applicant_info=applicant_info)
-    print(f"Decision Outcome: {decision.outcome}, ML Score: {decision.ml_score}, Symbolic Score: {decision.symbolic_score}, Reasons: {decision.reasons}")
+    for label, applicant, info in test_apps.test_cases:
+        logic.logger.info("\n" + "="*60)
+        logic.logger.info(f"STARTING TEST CASE: {label.upper()}")
+        logic.logger.info("="*60)
+
+        decision = logic.make_decision(applicant, applicant_info=info)
+
+        logic.logger.info(f"\nTest case '{label}' completed successfully")
+        logic.logger.info("="*60)  
+            
+        # print(f"Decision Outcome for {label}: {decision.outcome}, ML Score: {decision.ml_score}, Symbolic Score: {decision.symbolic_score}, Reasons: {decision.reasons}")
+
+    logic.logger.info("\n" + "="*60)
+    logic.logger.info("ALL TEST CASES COMPLETED")
+    logic.logger.info("="*60)
 
 

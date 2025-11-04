@@ -109,7 +109,8 @@ class Model:
                                                             test_size=0.4, random_state=42, stratify=y)
         self.X_cal, self.X_test, self.y_cal, self.y_test = train_test_split(X_temp, y_temp, 
                                                             test_size=0.5, random_state=42, stratify=y_temp)
-        self.numeric_cols.remove("repay_fail")
+        if "repay_fail" in self.numeric_cols:
+            self.numeric_cols.remove("repay_fail")
         preprocessor = ColumnTransformer([
             ('num', StandardScaler(), self.numeric_cols),
             ('cat', OneHotEncoder(handle_unknown='ignore'), self.categorical_cols),
