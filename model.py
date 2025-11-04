@@ -157,7 +157,9 @@ class Model:
             X["revol_per_acc"] = X["revol_bal"] / (X["open_acc"] + 1)
         probability = self.model.predict_proba(X)[:,1][0]
         risk_score = 1000 - (probability * 1000)
+        print(f"Predicted Application Score = {risk_score}")
         return risk_score
+    
 
 if __name__ == '__main__':
     model = Model()
