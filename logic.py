@@ -136,9 +136,11 @@ class RuleScorer:
 
 
         
-# amend credit risk after decision rules
+# create new score after decision rules
 # will go through each rule and apply adjustments
 # this is just the symbolic part and runs through all cases regardless of ML score 
+
+    # testing purpose for all methods
     def apply_all_rules(self, sample_applicant, applicant_info) -> float:
         self.logger.info(f"Applying all rules to applicant: {applicant_info.get('id')}")
         adjustment = 0.0
@@ -149,11 +151,8 @@ class RuleScorer:
         adjustment += self.dti_penalty(applicant_info.get("dti", 0.0))
         new_score = self.score_ml + adjustment
         self.logger.info(f"Original ML Score: {self.score_ml}, Adjustment: {adjustment}, New Score: {new_score}")
-        # return new_score
 
-# this method adjust ML score depending on the least riskiest to most riskiest considerations
     def adjust_score_and_decide(self, applicant_info) -> Decision:
-        # take the risk score from the model component
         acc_score = 0; 
         pos_reasons = []
         neg_reasons = []
@@ -178,7 +177,6 @@ class RuleScorer:
                 reasons=[f"ML score {self.score_ml}. Denied without adjustments."]
             )
         
-        # riskiest = assets
         if (self.score_ml <= 750):
             temp = acc_score
             acc_score += self.assets_adj(applicant_info.get("assets", 0.0))
@@ -225,7 +223,7 @@ class RuleScorer:
                 pos_reasons.append("Age caused risk score to decrease.")
 
 
-    #    using new score     
+    # using new score
         if (acc_score < 0):
             return Decision(
                 outcome="DENY",
@@ -282,7 +280,7 @@ class LogicComponent():
         self.logger.info("Loading and training ML model...")
         self.model.load_data(self.filename, self.numeric, self.categorical, self.nrows)
         self.model.train_model()
-        self.model.test_model()  # logs your metrics    
+        self.model.test_model()  
         score = self.model.process_application(sample_applicant)
         self.logger.info(f"ML model returned score: {score}")
         self.logger.info("-" * 40)
@@ -311,14 +309,6 @@ class LogicComponent():
 
 
 if __name__ == '__main__':
-
-    # pass in sample application - coming from GUI in the form of a JSON
-    # pass in extra info such as number of children, assets, employment type, etc.
-
-    # using logic.decide() to return approve/deny
-    # if in betweeen threshholds - in review - extra function which checks if salary is high enough etc..
-    # mvp = in between thresholds - deny 
-
     import test_applicants as test_apps
     logic = LogicComponent()
 
@@ -331,9 +321,7 @@ if __name__ == '__main__':
 
         logic.logger.info(f"\nTest case '{label}' completed successfully")
         logic.logger.info("="*60)  
-            
-        # print(f"Decision Outcome for {label}: {decision.outcome}, ML Score: {decision.ml_score}, Symbolic Score: {decision.symbolic_score}, Reasons: {decision.reasons}")
-
+        
     logic.logger.info("\n" + "="*60)
     logic.logger.info("ALL TEST CASES COMPLETED")
     logic.logger.info("="*60)
