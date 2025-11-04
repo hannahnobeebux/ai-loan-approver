@@ -23,7 +23,9 @@ class Gui:
             "num_children_u18": None,
             "assets": None,
             "dti": None,
-            "age": None
+            "age": None,
+            "experienced_bankruptcy": None,
+            "cr_line_duration_years": None
         }
         self.tests = Tests()
         self.window = tk.Tk()
