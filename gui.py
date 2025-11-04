@@ -92,11 +92,11 @@ class Gui:
         print(application_values)
         decision = self.logic.process_application(application_values)
         response = decision.outcome
-        ml_score = decision.ml_score
-        print(decision.reasons)
-        print(decision.symbolic_score)
+        ml_score = round(decision.ml_score, 0)
+        reasons = decision.reasons
+        symbol_score = decision.symbolic_score
         output = "Approved" if response == "APPROVE" else "Denied"
-        messagebox.showinfo("Loan App Outcome", f"Loan {output}! (ML Score: {ml_score})")
+        messagebox.showinfo("Loan App Outcome", f"Loan {output}!\nML Score: {ml_score}\nSymbolic Score: {symbol_score}\nReasons: {reasons}")
 
     def handle_tests(self):
         tests = [
