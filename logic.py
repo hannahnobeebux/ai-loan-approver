@@ -18,9 +18,9 @@ class RuleScorer:
 
         self.score_ml = 0
 
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("LogicComponent")
         logging.basicConfig(
-            filename="logs/model.log",
+            filename="logs/logic.log",
             encoding="utf-8",
             format="{asctime} - {levelname} - {message}\n",
             filemode="w",
@@ -44,7 +44,7 @@ class RuleScorer:
             # _ge4 means "greater than or equal to 4"
             # having dependents affecting likelihood of repayment
             "children_penalties_u18": {0: 20, 1: 5, 2: -5, 3: -10},
-            "children_penalty_u18_ge4": -15.0,
+            "children_penalties_u18_ge4": -15.0,
 
             # assets bonus points
             # 5pts for each 10k but cap at 80pts
@@ -68,7 +68,19 @@ class RuleScorer:
     def set_score_ml(self, score: float) -> None:
         self.score_ml = score
 
-    def penalise_children_u18(self, num_children: int) -> int:
+    def penalise_children_u18(self, num_children) -> int:
+        if isinstance(num_children, str):
+            self.logger.error(f"Invalid type passed for number of children under 18: {num_children}")
+            return 0.0
+        try:
+            num_children = int(num_children)
+            if num_children < 0:
+                self.logger.error(f"Invalid negative value for children: {num_children}")
+                return 0.0
+        except (ValueError, TypeError):
+            self.logger.error(f"Invalid type passed for number of children under 18: {num_children}")
+            return 0.0
+
         if num_children is None or np.isnan(num_children):
             return 0.0
         n = int(num_children)
@@ -86,6 +98,11 @@ class RuleScorer:
         return float(bonus)
 
     def assets_adj(self, assets: float) -> float:
+        try:
+            assets = float(assets)
+        except (ValueError, TypeError):
+            self.logger.error(f"Invalid assets value: {assets}")
+            return 0.0
         if assets is None or np.isnan(assets):
             return 0.0
         # calculate bonus points for assets
@@ -93,6 +110,11 @@ class RuleScorer:
         return float(bonus)
 
     def dti_penalty(self, dti: float) -> float:
+        try:
+            dti = float(dti)
+        except (ValueError, TypeError):
+            self.logger.error(f"Invalid data type passed for dti: {dti}")
+            return 0.0
         if dti is None or np.isnan(dti):
             return 0.0
         if dti > self.cfg["dti_threshold"]:
@@ -105,6 +127,9 @@ class RuleScorer:
         return salary_points + assets_points
 
     def employment_adj(self, employment_type: Optional[str]) -> float:
+        if isinstance(employment_type, int):
+            self.logger.error(f"Invalid type passed for employment type: {employment_type}")
+            return 0.0
         if not employment_type: return 0.0
         et = str(employment_type).strip().lower()
         if "self" in et or "contract" in et:   # self-employed / contractor
@@ -135,7 +160,6 @@ class RuleScorer:
         return 0  # catching edge case for below 21 years old
 
 
-        
 # create new score after decision rules
 # will go through each rule and apply adjustments
 # this is just the symbolic part and runs through all cases regardless of ML score 
@@ -229,15 +253,16 @@ class RuleScorer:
                 outcome="DENY",
                 ml_score=self.score_ml,
                 symbolic_score=acc_score,
-                reasons=", ".join(neg_reasons)
+                reasons=neg_reasons
             )
         else:
             return Decision(
                 outcome="APPROVE",
                 ml_score=self.score_ml,
                 symbolic_score=acc_score,
-                reasons=", ".join(pos_reasons)
+                reasons=pos_reasons
             )
+        
 
 
 class LogicComponent():
@@ -286,16 +311,16 @@ class LogicComponent():
         self.logger.info("-" * 40)
         return score 
 
-    def make_decision(self, sample_applicant: pd.DataFrame, applicant_info: Dict[str, Any]) -> Decision:
+    def make_decision(self, sample_applicant: pd.DataFrame, applicant_info: Dict[str, Any], hardcoded_ml_score = None) -> Decision:
         self.logger.info(f"\nProcessing applicant with info:")
         self.logger.info(f"  Employment: {applicant_info.get('employment_type', 'N/A')}")
         self.logger.info(f"  Children: {applicant_info.get('num_children_u18', 'N/A')}")
-        self.logger.info(f"  Assets: ${applicant_info.get('assets', 'N/A'):,.2f}")
+        self.logger.info(f"  Assets: ${applicant_info.get('assets', 'N/A')}")
         self.logger.info(f"  DTI: {applicant_info.get('dti', 'N/A')}")
         self.logger.info(f"  Age: {applicant_info.get('age', 'N/A')}")
 
 
-        score = self.use_ml_model(sample_applicant)
+        score = self.use_ml_model(sample_applicant) if hardcoded_ml_score is None else hardcoded_ml_score
         self.rules.set_score_ml(score)
         decision = self.rules.adjust_score_and_decide(applicant_info)
         
@@ -303,21 +328,55 @@ class LogicComponent():
         self.logger.info(f"  Outcome: {decision.outcome}")
         self.logger.info(f"  ML Score: {decision.ml_score:.2f}")
         self.logger.info(f"  Symbolic Score: {decision.symbolic_score:.2f}")
-        self.logger.info(f"  Reasons: {decision.reasons}")        
+        self.logger.info(f"  Reasons: {'\n'.join(decision.reasons)}")        
         
         return decision
+
+    def process_application(self, applicant: Dict[str, Any], hardcode_ml_score = None) -> Decision:
+        if hardcode_ml_score is not None:
+            self.rules.set_score_ml(hardcode_ml_score)
+        else:
+            ml_score = self.use_ml_model(pd.DataFrame([applicant]))
+            self.rules.set_score_ml(ml_score)
+
+        symbolic_applicant_info = {
+            "employment_type": applicant.get("employment_type", ""),
+            "num_children_u18": applicant.get("num_children_u18", 0),
+            "assets": applicant.get("assets", 0.0),
+            "dti": applicant.get("dti", 0.0),
+            "age": applicant.get("age", 0),
+            "experienced_bankruptcy": applicant.get("experienced_bankruptcy", False),
+            "cr_line_duration_years": applicant.get("cr_line_duration_years", 0),
+        }
+
+        ml_applicant_info = pd.DataFrame([{
+            "loan_amnt": applicant.get("loan_amnt", 0.0),
+            "term": applicant.get("term", ""),
+            "int_rate": applicant.get("int_rate", 0.0),
+            "emp_length": applicant.get("emp_length", ""),
+            "home_ownership": applicant.get("home_ownership", ""),
+            "annual_inc": applicant.get("annual_inc", 0.0),
+            "purpose": applicant.get("purpose", ""),
+            "delinq_2yrs": applicant.get("delinq_2yrs", 0),
+            "open_acc": applicant.get("open_acc", 0),
+            "pub_rec": applicant.get("pub_rec", 0),
+            "revol_bal": applicant.get("revol_bal", 0.0),
+            "repay_fail": applicant.get("repay_fail", 0)
+        }]) if hardcode_ml_score is None else None
+
+        return self.make_decision(ml_applicant_info, symbolic_applicant_info, hardcoded_ml_score=hardcode_ml_score)
 
 
 if __name__ == '__main__':
     import test_applicants as test_apps
     logic = LogicComponent()
 
-    for label, applicant, info in test_apps.test_cases:
+    for label, applicant, info, ml_score in test_apps.test_cases:
         logic.logger.info("\n" + "="*60)
         logic.logger.info(f"STARTING TEST CASE: {label.upper()}")
         logic.logger.info("="*60)
 
-        decision = logic.make_decision(applicant, applicant_info=info)
+        decision = logic.make_decision(applicant, applicant_info=info, hardcoded_ml_score=ml_score)
 
         logic.logger.info(f"\nTest case '{label}' completed successfully")
         logic.logger.info("="*60)  

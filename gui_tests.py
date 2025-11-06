@@ -14,7 +14,10 @@ class Tests:
         "employment_type": "self-employment",
         "num_children_u18": 2,
         "assets": 2000,
-        "dti": 0.05
+        "dti": 0.05,
+        "age": 22,
+        "experienced_bankruptcy": False,
+        "cr_line_duration_years": 3
     }
     
     test_case_2 = {
@@ -32,7 +35,10 @@ class Tests:
         "employment_type": "employed",
         "num_children_u18": 0,
         "assets": 10000,
-        "dti": 0.25
+        "dti": 0.25,
+        "age": 22,
+        "experienced_bankruptcy": True,
+        "cr_line_duration_years": 3
     }
     
     test_case_3 = {
@@ -50,7 +56,10 @@ class Tests:
         "employment_type": "employed",
         "num_children_u18": 0,
         "assets": 10000,
-        "dti": 0.25
+        "dti": 0.25,
+        "age": 22,
+        "experienced_bankruptcy": True,
+        "cr_line_duration_years": 3
     }
 
     test_case_4 = {
