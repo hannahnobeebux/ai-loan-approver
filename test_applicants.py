@@ -75,7 +75,7 @@ low_risk_info = {
     "dti": 0.08,                        # low debt-to-income
     "cr_line_duration_years": 15,       # long credit history
     "experienced_bankruptcy": False,     # no bankruptcy
-    "age": 18
+    "age": 25
 }
 
 # EDGE CASE: VERY HIGH SCORE APPLICANT (should auto-approve)
@@ -129,7 +129,6 @@ poor_info = {
 }
 
 # Below test cases will use hardcoded ML scores just to test symbolic layer in isolation
-# Test case: Good ML Score but bad reasons for a symbolic score --> outcome = DENY eg: bankruptcy or age
 # Test case: mix of good and bad reasons but gets denied overall
 # Test case: mix of good and bad reasons but gets approved overall
 
@@ -144,16 +143,50 @@ bad_ml_good_symbolic_info = {
     "age": 35                           # no penalty
 }
 
-# Failing test - incorrect passing of hardcoded ML score 
+# Test case: Good ML Score but bad reasons for a symbolic score --> outcome = DENY eg: bankruptcy or age
+good_ml_bad_symbolic_info = {
+    "employment_type": "Unemployed",  # penalty
+    "num_children_u18": 2,              # -25 penalty (2 children)
+    "assets": 200.0,                    # minimal assets
+    "dti": 0.55,                        # high DTI penalty
+    "cr_line_duration_years": 0.8,      # short credit history penalty
+    "experienced_bankruptcy": True,      # -50 bankruptcy penalty
+    "age": 19                           # young age penalty
+}
+
+# Test case: Mix of good and bad reasons but gets denied overall
+mixed_denied_info = {
+    "employment_type": "Full-time",      # +10 bonus
+    "num_children_u18": 4,              # -20 penalty
+    "assets": 25000.0,                  # +30 bonus
+    "dti": 0.48,                        # -20 penalty (high DTI)
+    "cr_line_duration_years": 1.2,      # -15 penalty (short credit)
+    "experienced_bankruptcy": True,      # -50 penalty
+    "age": 18                           # -20 penalty (too young)
+}
 
 
-# List of all test cases for easy iteration
+# Failing test to solve - data type inconsistency
+data_type_error_info = {
+    "employment_type": 123,             # int instead of string
+    "num_children_u18": "two",          # string instead of int
+    "assets": "50000",                  # string instead of float
+    "dti": "0.25",                      # string instead of float
+    "cr_line_duration_years": 5.5,     # valid float
+    "experienced_bankruptcy": "yes",    # string instead of bool
+    "age": 30.5                         # valid float
+}
+
+# List of all test cases
 test_cases = [
     ("High Risk", high_risk_applicant, high_risk_info, None),
     ("Medium Risk", medium_risk_applicant, medium_risk_info, None),
     ("Low Risk", low_risk_applicant, low_risk_info, None),
     ("Excellent", excellent_applicant, excellent_info, None),
     ("Poor", poor_applicant, poor_info, None), 
-    ("Hardcoded ML | Poor Credit Risk + Good factors", {}, bad_ml_good_symbolic_info, 701)
+    ("Hardcoded ML | Poor Credit Risk + Good factors", {}, bad_ml_good_symbolic_info, 701),
+    ("Hardcoded ML | Good Credit + Bad Factors → DENY", {}, good_ml_bad_symbolic_info, 820),
+    ("Hardcoded ML | Mixed Factors → DENY", {}, mixed_denied_info, 750),
+    ("Handling application with hardcoded ML and incorrect data types passes", {}, data_type_error_info, 780)
 ]
 

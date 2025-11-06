@@ -18,9 +18,9 @@ class RuleScorer:
 
         self.score_ml = 0
 
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("LogicComponent")
         logging.basicConfig(
-            filename="logs/model.log",
+            filename="logs/logic.log",
             encoding="utf-8",
             format="{asctime} - {levelname} - {message}\n",
             filemode="w",
@@ -44,7 +44,7 @@ class RuleScorer:
             # _ge4 means "greater than or equal to 4"
             # having dependents affecting likelihood of repayment
             "children_penalties_u18": {0: 20, 1: 5, 2: -5, 3: -10},
-            "children_penalty_u18_ge4": -15.0,
+            "children_penalties_u18_ge4": -15.0,
 
             # assets bonus points
             # 5pts for each 10k but cap at 80pts
@@ -68,7 +68,19 @@ class RuleScorer:
     def set_score_ml(self, score: float) -> None:
         self.score_ml = score
 
-    def penalise_children_u18(self, num_children: int) -> int:
+    def penalise_children_u18(self, num_children) -> int:
+        if isinstance(num_children, str):
+            self.logger.error(f"Invalid type passed for number of children under 18: {num_children}")
+            return 0.0
+        try:
+            num_children = int(num_children)
+            if num_children < 0:
+                self.logger.error(f"Invalid negative value for children: {num_children}")
+                return 0.0
+        except (ValueError, TypeError):
+            self.logger.error(f"Invalid type passed for number of children under 18: {num_children}")
+            return 0.0
+
         if num_children is None or np.isnan(num_children):
             return 0.0
         n = int(num_children)
@@ -86,6 +98,11 @@ class RuleScorer:
         return float(bonus)
 
     def assets_adj(self, assets: float) -> float:
+        try:
+            assets = float(assets)
+        except (ValueError, TypeError):
+            self.logger.error(f"Invalid assets value: {assets}")
+            return 0.0
         if assets is None or np.isnan(assets):
             return 0.0
         # calculate bonus points for assets
@@ -93,6 +110,11 @@ class RuleScorer:
         return float(bonus)
 
     def dti_penalty(self, dti: float) -> float:
+        try:
+            dti = float(dti)
+        except (ValueError, TypeError):
+            self.logger.error(f"Invalid data type passed for dti: {dti}")
+            return 0.0
         if dti is None or np.isnan(dti):
             return 0.0
         if dti > self.cfg["dti_threshold"]:
@@ -105,6 +127,9 @@ class RuleScorer:
         return salary_points + assets_points
 
     def employment_adj(self, employment_type: Optional[str]) -> float:
+        if isinstance(employment_type, int):
+            self.logger.error(f"Invalid type passed for employment type: {employment_type}")
+            return 0.0
         if not employment_type: return 0.0
         et = str(employment_type).strip().lower()
         if "self" in et or "contract" in et:   # self-employed / contractor
@@ -114,7 +139,6 @@ class RuleScorer:
         return 0.0
     
     def cr_line_duration_adj(self, years: float) -> float:
-        print(f"years = {years}")
         # enumerate through entire dictionary to find a satisfactory value for the score adjustment
         for (key, val) in self.cfg["cr_line_duration_considerations"].items():
             if years >= int(key):
@@ -291,7 +315,7 @@ class LogicComponent():
         self.logger.info(f"\nProcessing applicant with info:")
         self.logger.info(f"  Employment: {applicant_info.get('employment_type', 'N/A')}")
         self.logger.info(f"  Children: {applicant_info.get('num_children_u18', 'N/A')}")
-        self.logger.info(f"  Assets: ${applicant_info.get('assets', 'N/A'):,.2f}")
+        self.logger.info(f"  Assets: ${applicant_info.get('assets', 'N/A')}")
         self.logger.info(f"  DTI: {applicant_info.get('dti', 'N/A')}")
         self.logger.info(f"  Age: {applicant_info.get('age', 'N/A')}")
 
